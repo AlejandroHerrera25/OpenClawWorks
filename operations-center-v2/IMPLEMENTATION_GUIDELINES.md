@@ -2,37 +2,93 @@
 ## OpenClaw Operations Center v2
 
 > **Documento de referencia obligatorio** para cualquier desarrollo, modificación o extensión del proyecto.
+> 
+> **Objetivo:** Software que un **equipo de ingeniería senior mantendría en producción.**
 
 ---
 
-## 📐 ARQUITECTURA DEL PROYECTO
+## 🎯 MISIÓN PRINCIPAL
 
-### Estructura de Directorios
+Entregar soluciones fullstack que sean:
+
+| Atributo | Descripción |
+|----------|-------------|
+| **Funcional** | Código que ejecuta, no que simula |
+| **Seguro** | Input siempre validado, secrets en env vars |
+| **Tipado** | Type safety en frontend y backend |
+| **Accesible** | A11y no es opcional |
+| **Performante** | Sin re-renders innecesarios, bundles livianos |
+| **Mantenible** | Código que otros pueden entender y modificar |
+| **Auditable** | Logging claro, errores trazables |
+| **Production-ready** | Sin TODOs críticos, sin mocks como producción |
+
+### ⛔ PROHIBICIONES ABSOLUTAS
+- **Nunca** simular capacidades de backend
+- **Nunca** fabricar integraciones o APIs
+- **Nunca** presentar datos mock como datos de producción
+- **Nunca** implicar comportamiento que no está implementado
+
+---
+
+## 📐 DOCTRINA ARQUITECTÓNICA
+
+### Los 7 Principios Fundamentales
+
+```
+1. CORRECTNESS OVER CLEVERNESS
+   → Código que funciona > código "elegante" que falla
+
+2. EXPLICITNESS OVER MAGIC
+   → Comportamiento predecible > abstracciones ocultas
+
+3. MINIMAL COMPLEXITY
+   → Resolver el problema, no demostrar habilidad
+
+4. ACCESSIBILITY BY DEFAULT
+   → A11y desde el diseño, no como parche
+
+5. SECURITY BY DESIGN
+   → Todo input es hostil hasta probar lo contrario
+
+6. TYPE SAFETY EVERYWHERE
+   → Si no está tipado, no está terminado
+
+7. MAINTAINABILITY OVER NOVELTY
+   → Código aburrido que funciona > código innovador que nadie entiende
+```
+
+### Estructura del Proyecto
 ```
 operations-center-v2/
 ├── app/
 │   ├── api/           # Endpoints y rutas (FastAPI)
-│   │   └── main.py    # Gateway principal
-│   └── core/          # Lógica de negocio
-│       └── data_manager.py  # Singleton de datos
-├── ui/                # Frontend (HTML/CSS/JS vanilla)
+│   │   └── main.py    # Gateway principal - SOLO routing
+│   ├── core/          # Lógica de negocio
+│   │   └── data_manager.py  # Singleton de datos
+│   ├── routers/       # Rutas específicas por dominio
+│   ├── services/      # Lógica de negocio aislada
+│   ├── schemas/       # Pydantic models (request/response)
+│   └── models/        # Modelos de dominio
+├── ui/                # Frontend (HTML/CSS/JS)
 │   └── overview.html  # Dashboard principal
 ├── logs/              # Logs del servidor (generados)
-├── start.sh           # Script de inicio (FastAPI)
-└── start_simple.sh    # Script alternativo (HTTP simple)
+└── tests/             # Tests unitarios e integración
 ```
 
-### Patrón de Arquitectura
+### Diagrama de Arquitectura
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    FRONTEND (UI)                            │
-│         HTML + CSS Variables + Vanilla JavaScript           │
+│         HTML Semántico + CSS Variables + Vanilla JS         │
+│         Estados: loading | empty | success | error          │
 └─────────────────────────┬───────────────────────────────────┘
                           │ REST + WebSocket
+                          │ Contratos tipados
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 FastAPI Gateway (async)                     │
-│     /api/* endpoints  │  /ws/live WebSocket  │  /ui/*      │
+│  /api/* endpoints  │  /ws/live WebSocket  │  /ui/* static  │
+│  Request Model → Validation → Response Model                │
 └─────────────────────────┬───────────────────────────────────┘
                           │
                           ▼
@@ -41,37 +97,99 @@ operations-center-v2/
 │  • In-Memory State    • Cache con TTL    • FileWatcher     │
 │  • SQLite FTS5 Search Index                                │
 └─────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-              Sistema de archivos (.openclaw/)
 ```
 
 ---
 
 ## 🐍 BACKEND (Python/FastAPI)
 
-### 1. Imports y Dependencias
+### Estructura de Archivos Backend
 
-```python
-# ✅ CORRECTO: Imports organizados por tipo
-from fastapi import FastAPI, WebSocket, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone  # SIEMPRE incluir timezone
-from pathlib import Path
-import asyncio
-import json
-import os
-
-# ❌ INCORRECTO: Imports desordenados o innecesarios
-import json, os, sys  # No mezclar en una línea
-from datetime import *  # No usar wildcard imports
+```
+app/
+├── api/
+│   └── main.py          # Solo setup de app y routers
+├── routers/
+│   ├── events.py        # /api/events/*
+│   ├── watchdog.py      # /api/watchdog/*
+│   └── search.py        # /api/search/*
+├── services/
+│   ├── event_service.py # Lógica de eventos
+│   └── search_service.py
+├── schemas/
+│   ├── requests.py      # Request models
+│   └── responses.py     # Response models
+└── core/
+    ├── config.py        # Settings centralizados
+    └── data_manager.py  # Singleton
 ```
 
-### 2. Parámetros de Query en FastAPI
+### Contratos de API (OBLIGATORIO)
+
+Todo endpoint **DEBE** tener:
+- Request model (Pydantic)
+- Response model (Pydantic)
+- Reglas de validación explícitas
+
+```python
+# ✅ CORRECTO: Contrato completo y explícito
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from enum import Enum
+
+class SeverityLevel(str, Enum):
+    S1 = "S1"  # Critical
+    S2 = "S2"  # High
+    S3 = "S3"  # Medium
+    S4 = "S4"  # Low
+
+# Request Schema
+class EventsQueryParams(BaseModel):
+    limit: int = Field(default=50, ge=1, le=200, description="Max events to return")
+    offset: int = Field(default=0, ge=0, description="Pagination offset")
+    severity: Optional[SeverityLevel] = Field(None, description="Filter by severity")
+
+# Response Schema
+class EventItem(BaseModel):
+    id: str
+    type: str
+    severity: SeverityLevel
+    timestamp: str
+    source: str
+
+class EventsResponse(BaseModel):
+    success: bool = True
+    data: List[EventItem]
+    total: int
+    filters_applied: dict
+
+# Endpoint con tipos explícitos
+@router.get("/events", response_model=EventsResponse)
+async def get_events(params: EventsQueryParams = Depends()):
+    """Retorna eventos paginados con filtros opcionales."""
+    events = event_service.get_events(
+        limit=params.limit,
+        offset=params.offset,
+        severity=params.severity
+    )
+    return EventsResponse(
+        data=events,
+        total=len(events),
+        filters_applied={"severity": params.severity}
+    )
+
+# ❌ INCORRECTO: Payload impredecible
+@app.get("/events")
+async def get_events():
+    return {"data": some_data}  # Sin tipado, sin validación
+```
+
+### Parámetros de Query en FastAPI
 
 ```python
 # ✅ CORRECTO: Usar 'pattern' para validación regex (FastAPI v2+)
+from fastapi import Query
+
 @app.get("/api/events")
 async def get_events(
     limit: int = Query(default=50, ge=1, le=200),
@@ -80,156 +198,205 @@ async def get_events(
 ):
     pass
 
-# ❌ INCORRECTO: 'regex' está DEPRECADO
+# ❌ INCORRECTO: 'regex' está DEPRECADO en Pydantic v2
 severity: Optional[str] = Query(None, regex="^(S1|S2|S3|S4)$")  # NO USAR
 ```
 
-### 3. Funciones Auxiliares (NO son métodos de clase)
+### Funciones vs Métodos de Clase
 
 ```python
 # ✅ CORRECTO: Función independiente SIN 'self'
-def _group_results_by_type(results: List[Dict]) -> Dict:
-    """Agrupa resultados por tipo"""
-    types = {}
+def _group_results_by_type(results: List[Dict]) -> Dict[str, int]:
+    """Agrupa resultados por tipo."""
+    types: Dict[str, int] = {}
     for result in results:
         result_type = result.get("type", "unknown")
         types[result_type] = types.get(result_type, 0) + 1
     return types
 
 # Llamada correcta:
-data = _group_results_by_type(results)
+grouped = _group_results_by_type(results)
 
 # ❌ INCORRECTO: Usar 'self' fuera de una clase
-def _group_results_by_type(self, results):  # ERROR: 'self' no aplica
+def _group_results_by_type(self, results):  # ERROR FATAL
     pass
-
-data = self._group_results_by_type(results)  # ERROR: No existe 'self'
 ```
 
-### 4. Manejo de Fechas y Timezone
+### Manejo de Fechas y Timezone
 
 ```python
-# ✅ CORRECTO: Siempre usar timezone aware
+# ✅ CORRECTO: Siempre timezone aware
 from datetime import datetime, timezone
 
-# Para obtener fecha actual:
-now = datetime.now(timezone.utc)
+def get_current_time() -> datetime:
+    """Retorna tiempo actual con timezone UTC."""
+    return datetime.now(timezone.utc)
 
-# Para comparar con fechas ISO:
-def compare_dates(iso_string: str) -> int:
+def parse_iso_date(iso_string: str) -> datetime:
+    """Parsea fecha ISO con manejo de timezone."""
     parsed = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
-    
-    # Verificar si es aware o naive
-    if parsed.tzinfo is not None:
-        now = datetime.now(timezone.utc)
-    else:
-        now = datetime.now()
-    
+    return parsed
+
+def calculate_age_days(iso_string: str) -> int:
+    """Calcula días desde una fecha ISO."""
+    parsed = parse_iso_date(iso_string)
+    now = datetime.now(timezone.utc) if parsed.tzinfo else datetime.now()
     return (now - parsed).days
 
-# ❌ INCORRECTO: datetime naive causa errores de comparación
-now = datetime.now()  # Sin timezone - EVITAR
-datetime.utcnow()     # DEPRECADO en Python 3.12+
+# ❌ INCORRECTO: datetime naive
+datetime.now()      # Sin timezone - comparaciones incorrectas
+datetime.utcnow()   # DEPRECADO en Python 3.12+
 ```
 
-### 5. Manejo de Excepciones
+### Manejo de Excepciones (Crítico)
 
 ```python
-# ✅ CORRECTO: Especificar tipos de excepción
-try:
-    data = json.loads(content)
-except json.JSONDecodeError as e:
-    print(f"Error parsing JSON: {e}")
-    return None
-except (ValueError, TypeError) as e:
-    print(f"Validation error: {e}")
-    return None
+# ✅ CORRECTO: Excepciones específicas con logging
+import logging
+logger = logging.getLogger(__name__)
 
-# ✅ CORRECTO: Para múltiples excepciones conocidas
-except (ValueError, TypeError, AttributeError, KeyError) as e:
-    logger.warning(f"Data processing error: {e}")
-    return default_value
+def process_event(data: dict) -> Optional[Event]:
+    try:
+        return Event(**data)
+    except ValidationError as e:
+        logger.warning(f"Invalid event data: {e}")
+        return None
+    except (KeyError, TypeError) as e:
+        logger.error(f"Event processing failed: {e}")
+        raise EventProcessingError(f"Cannot process event: {e}")
 
-# ❌ INCORRECTO: Bare except captura TODO (incluso Ctrl+C)
+# ✅ CORRECTO: Múltiples excepciones conocidas
 try:
-    process_data()
-except:  # NO HACER ESTO
+    result = risky_operation()
+except (ValueError, TypeError, AttributeError) as e:
+    logger.warning(f"Operation failed: {e}")
+    return fallback_value
+except Exception as e:
+    logger.exception(f"Unexpected error: {e}")  # Con stack trace
+    raise
+
+# ❌ INCORRECTO: Bare except (captura Ctrl+C, SystemExit)
+try:
+    process()
+except:  # NUNCA
     pass
 
-# ❌ INCORRECTO: Capturar Exception sin logging
+# ❌ INCORRECTO: Exception silenciada
 except Exception:
-    return None  # Error silenciado - difícil debugging
+    return None  # ¿Qué falló? Imposible saber
 ```
 
-### 6. WebSocket y Conexiones
+### Seguridad Backend
 
 ```python
-# ✅ CORRECTO: Manejo de errores en broadcast
-async def broadcast(self, message: dict):
-    disconnected = []
-    for connection in self.active_connections:
-        try:
-            await connection.send_json(message)
-        except Exception as e:
-            print(f"WebSocket send error: {e}")
-            disconnected.append(connection)
+# ✅ CORRECTO: Validación de input
+from pydantic import BaseModel, validator, Field
+import re
+
+class SearchQuery(BaseModel):
+    q: str = Field(..., min_length=2, max_length=100)
     
-    for conn in disconnected:
-        self.disconnect(conn)
+    @validator('q')
+    def sanitize_query(cls, v):
+        # Remover caracteres peligrosos para FTS5
+        return re.sub(r'[^\w\s\-]', '', v)
 
-# ❌ INCORRECTO: Silenciar errores de WebSocket
-except:
-    disconnected.append(connection)  # Sin logging - imposible debuggear
-```
-
-### 7. Configuración de CORS
-
-```python
-# ✅ CORRECTO: CORS configurable por entorno
-allowed_origins = os.environ.get(
-    "ALLOWED_ORIGINS", 
-    "http://localhost:8000"
-).split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["*"],
-)
-
-# ⚠️ SOLO DESARROLLO: allow_origins=["*"]
-# ❌ PRODUCCIÓN: Nunca usar ["*"] - vulnerabilidad de seguridad
-```
-
-### 8. Exposición de Errores
-
-```python
-# ✅ CORRECTO: Ocultar detalles en producción
+# ✅ CORRECTO: No exponer errores en producción
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    is_production = os.environ.get("ENV") == "production"
+    is_prod = os.environ.get("ENV") == "production"
+    
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
     
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "error": "internal_error",
-            "message": "Internal server error" if is_production else str(exc)
+            "message": "An error occurred" if is_prod else str(exc)
         }
     )
 
-# ❌ INCORRECTO: Exponer stack traces al cliente
-"message": str(exc)  # En producción revela info sensible
-"details": traceback.format_exc()  # NUNCA hacer esto
+# ❌ INCORRECTO: Exponer stack traces
+"message": str(exc),
+"traceback": traceback.format_exc()  # NUNCA en producción
+
+# ❌ INCORRECTO: Confiar en datos del cliente
+user_role = request.headers.get("X-User-Role")  # Fácilmente falsificable
+if user_role == "admin":
+    do_admin_stuff()  # VULNERABLE
+```
+
+### CORS y Configuración
+
+```python
+# ✅ CORRECTO: CORS configurable por entorno
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    env: str = "development"
+    allowed_origins: str = "http://localhost:8000"
+    
+    @property
+    def cors_origins(self) -> List[str]:
+        return self.allowed_origins.split(",")
+    
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
+
+# ⚠️ SOLO DESARROLLO: allow_origins=["*"]
+# ❌ PRODUCCIÓN: NUNCA usar ["*"]
 ```
 
 ---
 
 ## 🌐 FRONTEND (HTML/CSS/JavaScript)
 
-### 1. URLs de API
+### Estados de UI (OBLIGATORIOS)
+
+Todo componente que carga datos **DEBE** manejar 4 estados:
+
+```javascript
+// ✅ CORRECTO: Estados explícitos
+const UIState = {
+    LOADING: 'loading',
+    EMPTY: 'empty',
+    SUCCESS: 'success',
+    ERROR: 'error'
+};
+
+let currentState = UIState.LOADING;
+
+function renderComponent(state, data, error) {
+    switch(state) {
+        case UIState.LOADING:
+            return renderSkeleton();
+        case UIState.EMPTY:
+            return renderEmptyState("No data available");
+        case UIState.SUCCESS:
+            return renderData(data);
+        case UIState.ERROR:
+            return renderError(error);
+    }
+}
+
+// ❌ INCORRECTO: Solo manejar caso feliz
+function render(data) {
+    return data.map(item => renderItem(item));  // ¿Y si es null? ¿Error?
+}
+```
+
+### URLs de API
 
 ```javascript
 // ✅ CORRECTO: URL dinámica basada en el origen
@@ -237,160 +404,315 @@ const API_BASE = window.location.origin + '/api';
 // O simplemente:
 const API_BASE = '/api';
 
-// ❌ INCORRECTO: URL hardcodeada - NO funciona en producción
+// ❌ INCORRECTO: URL hardcodeada - FALLA en producción
 const API_BASE = 'http://localhost:8000/api';  // NUNCA
-const API_BASE = 'http://127.0.0.1:8000/api';  // NUNCA
 ```
 
-### 2. Manejo de Errores en Fetch
+### Fetch con Manejo de Errores Completo
 
 ```javascript
-// ✅ CORRECTO: Distinguir tipos de error
+// ✅ CORRECTO: Manejo exhaustivo de errores
 async function fetchData(endpoint) {
     try {
         const response = await fetch(`${API_BASE}${endpoint}`);
         
+        // HTTP errors
         if (!response.ok) {
             if (response.status >= 500) {
-                throw new Error(`Server error: ${response.status}`);
+                throw new APIError('Server error', response.status);
             } else if (response.status === 404) {
-                throw new Error(`Endpoint not found: ${endpoint}`);
+                throw new APIError('Not found', response.status);
+            } else if (response.status === 401) {
+                throw new APIError('Unauthorized', response.status);
             } else {
-                throw new Error(`HTTP ${response.status}`);
+                throw new APIError(`HTTP ${response.status}`, response.status);
             }
         }
         
-        return await response.json();
+        const data = await response.json();
+        
+        // API-level errors
+        if (!data.success) {
+            throw new APIError(data.message || 'API error', response.status);
+        }
+        
+        return data.data;
+        
     } catch (error) {
-        // Distinguir error de red vs error de servidor
+        // Network errors
         if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-            throw new Error('Network error: Server unreachable');
+            throw new NetworkError('Server unreachable');
         }
         throw error;
     }
 }
 
-// ❌ INCORRECTO: Ignorar tipos de error
-catch (error) {
-    console.log('Error');  // Sin contexto útil
+// Custom error classes
+class APIError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.name = 'APIError';
+        this.status = status;
+    }
+}
+
+class NetworkError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'NetworkError';
+    }
 }
 ```
 
-### 3. Manejo de Try/Catch
+### Try/Catch con Logging
 
 ```javascript
-// ✅ CORRECTO: catch con variable de error
+// ✅ CORRECTO: catch con variable y logging
 try {
     const date = new Date(timestamp);
     return formatDate(date);
 } catch (e) {
-    console.warn('Date parsing error:', e);
+    console.warn('Date parsing error:', e.message, { timestamp });
     return '--';
 }
 
-// ❌ INCORRECTO: catch vacío - errores silenciados
+// ❌ INCORRECTO: catch vacío
 } catch {
-    return '--';  // ¿Qué falló? Imposible saber
+    return '--';  // Imposible debuggear
 }
 ```
 
-### 4. CSS Variables y Temas
+### HTML Semántico y Accesibilidad
+
+```html
+<!-- ✅ CORRECTO: HTML semántico con a11y -->
+<nav aria-label="Main navigation">
+    <ul role="menubar">
+        <li role="none">
+            <a href="#overview" role="menuitem" class="nav-tab active">
+                Overview
+            </a>
+        </li>
+    </ul>
+</nav>
+
+<main id="main-content">
+    <section aria-labelledby="overview-title">
+        <h2 id="overview-title">System Overview</h2>
+        
+        <!-- Form inputs con labels -->
+        <label for="search-input">Search</label>
+        <input 
+            type="search" 
+            id="search-input" 
+            name="search"
+            aria-describedby="search-help"
+        >
+        <span id="search-help" class="sr-only">
+            Search events, skills, and sessions
+        </span>
+        
+        <!-- Botones reales -->
+        <button type="button" onclick="refresh()">
+            Refresh Data
+        </button>
+    </section>
+</main>
+
+<!-- ❌ INCORRECTO: Div como botón -->
+<div class="button" onclick="doSomething()">Click me</div>
+
+<!-- ❌ INCORRECTO: Input sin label -->
+<input type="text" placeholder="Search...">
+
+<!-- ❌ INCORRECTO: Link sin href real -->
+<a onclick="navigate()">Go somewhere</a>
+```
+
+### CSS Variables y Sistema de Diseño
 
 ```css
-/* ✅ CORRECTO: Variables centralizadas */
+/* ✅ CORRECTO: Sistema de diseño con tokens */
 :root {
-    --color-bg: #0a0a0f;
-    --color-surface: #12121a;
-    --color-text: #e0e0e0;
-    --color-accent: #6366f1;
-    --color-success: #22c55e;
-    --color-error: #ef4444;
+    /* Colors - Semantic naming */
+    --color-bg-primary: #0a0a0f;
+    --color-bg-surface: #12121a;
+    --color-bg-elevated: #1a1a24;
     
-    --spacing-sm: 0.5rem;
-    --spacing-md: 1rem;
-    --spacing-lg: 1.5rem;
+    --color-text-primary: #e0e0e0;
+    --color-text-secondary: #888888;
+    --color-text-disabled: #555555;
     
+    --color-border-default: #2a2a3a;
+    --color-border-hover: #3a3a4a;
+    
+    --color-accent-primary: #6366f1;
+    --color-accent-hover: #7c7ff2;
+    
+    --color-status-success: #22c55e;
+    --color-status-warning: #f59e0b;
+    --color-status-error: #ef4444;
+    --color-status-info: #3b82f6;
+    
+    /* Spacing - 4px base unit */
+    --space-1: 0.25rem;  /* 4px */
+    --space-2: 0.5rem;   /* 8px */
+    --space-3: 0.75rem;  /* 12px */
+    --space-4: 1rem;     /* 16px */
+    --space-6: 1.5rem;   /* 24px */
+    --space-8: 2rem;     /* 32px */
+    
+    /* Typography */
+    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-family-mono: 'SF Mono', Consolas, monospace;
+    
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    
+    /* Borders */
+    --radius-sm: 4px;
     --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.1);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.15);
+    --shadow-lg: 0 10px 15px rgba(0,0,0,0.2);
+    
+    /* Transitions */
     --transition-fast: 150ms ease;
+    --transition-base: 250ms ease;
+    --transition-slow: 350ms ease;
+    
+    /* Z-index scale */
+    --z-dropdown: 100;
+    --z-modal: 200;
+    --z-toast: 300;
 }
 
-/* Uso consistente */
+/* Componente usando tokens */
 .card {
-    background: var(--color-surface);
-    padding: var(--spacing-md);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--radius-md);
+    padding: var(--space-4);
+    transition: border-color var(--transition-fast);
 }
 
-/* ❌ INCORRECTO: Valores hardcodeados repetidos */
-.card { background: #12121a; padding: 16px; }
-.button { background: #12121a; padding: 16px; }
+.card:hover {
+    border-color: var(--color-border-hover);
+}
+
+/* ❌ INCORRECTO: Valores hardcodeados */
+.card {
+    background: #12121a;  /* ¿Qué color es? */
+    padding: 16px;        /* ¿Por qué 16? */
+    border-radius: 8px;   /* Inconsistente */
+}
 ```
 
-### 5. Responsive Design (Mobile-First)
+### Responsive Design (Mobile-First)
 
 ```css
-/* ✅ CORRECTO: Base móvil, escalar hacia arriba */
+/* ✅ CORRECTO: Mobile-first */
 .grid {
     display: grid;
-    grid-template-columns: 1fr;  /* Móvil: 1 columna */
-    gap: var(--spacing-md);
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
 }
 
+/* Tablet */
 @media (min-width: 768px) {
     .grid {
-        grid-template-columns: repeat(2, 1fr);  /* Tablet */
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
+/* Desktop */
 @media (min-width: 1024px) {
     .grid {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     }
 }
 
-/* ❌ INCORRECTO: Desktop-first con max-width */
-.grid { grid-template-columns: repeat(4, 1fr); }
-@media (max-width: 768px) { /* Sobreescribir */ }
+/* ❌ INCORRECTO: Desktop-first */
+.grid {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1024px) {
+    .grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+```
+
+### Performance Frontend
+
+```javascript
+// ✅ CORRECTO: Lazy loading y memoización cuando justificado
+const cache = new Map();
+
+async function fetchWithCache(endpoint, ttl = 30000) {
+    const cacheKey = endpoint;
+    const cached = cache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < ttl) {
+        return cached.data;
+    }
+    
+    const data = await fetchData(endpoint);
+    cache.set(cacheKey, { data, timestamp: Date.now() });
+    return data;
+}
+
+// ✅ CORRECTO: Debounce para inputs frecuentes
+function debounce(fn, delay) {
+    let timeoutId;
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+const debouncedSearch = debounce(async (query) => {
+    const results = await fetchData(`/search?q=${query}`);
+    renderResults(results);
+}, 300);
+
+// ❌ INCORRECTO: Llamada en cada keystroke
+input.addEventListener('keyup', async (e) => {
+    const results = await fetchData(`/search?q=${e.target.value}`);
+    renderResults(results);  // API bombardeada
+});
 ```
 
 ---
 
 ## 🗄️ DATA MANAGER (Singleton)
 
-### Principios del Singleton
+### Implementación Thread-Safe
 
 ```python
-# ✅ CORRECTO: Patrón Singleton thread-safe
-class DataManager:
-    _instance: Optional['DataManager'] = None
-    _lock = threading.Lock()
-    
-    def __new__(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:  # Double-check locking
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-    
-    def __init__(self):
-        if self._initialized:
-            return  # Ya inicializado, no repetir
-        
-        # Inicialización única
-        self._load_data()
-        self._initialized = True
+from typing import Optional, Dict, Any, List, Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import threading
 
-# Uso global
-data_manager = DataManager()
-```
-
-### Cache con TTL
-
-```python
-# ✅ CORRECTO: Cache con tiempo de expiración
 @dataclass
 class CacheEntry:
+    """Entrada de caché con TTL."""
     data: Any
     timestamp: datetime
     ttl_seconds: int = 30
@@ -400,85 +722,163 @@ class CacheEntry:
         elapsed = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
         return elapsed < self.ttl_seconds
 
-def get_cached(self, key: str, loader: Callable, ttl: int = 30) -> Any:
-    if key in self._cache and self._cache[key].is_valid:
-        return self._cache[key].data
+class DataManager:
+    """
+    Singleton thread-safe para gestión de estado en memoria.
     
-    data = loader()
-    self._cache[key] = CacheEntry(
-        data=data, 
-        timestamp=datetime.now(timezone.utc),
-        ttl_seconds=ttl
-    )
-    return data
+    Responsabilidades:
+    - Cargar datos desde filesystem
+    - Mantener caché con TTL
+    - Proveer búsqueda FTS5
+    - Notificar cambios via FileWatcher
+    """
+    
+    _instance: Optional['DataManager'] = None
+    _lock = threading.Lock()
+    
+    def __new__(cls) -> 'DataManager':
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:  # Double-check locking
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self) -> None:
+        if self._initialized:
+            return
+        
+        self._cache: Dict[str, CacheEntry] = {}
+        self._db_lock = threading.Lock()
+        self._subscribers: List[Callable] = []
+        
+        self._init_database()
+        self._init_file_watcher()
+        self._load_initial_data()
+        
+        self._initialized = True
+    
+    def get_cached(
+        self, 
+        key: str, 
+        loader: Callable[[], Any], 
+        ttl: int = 30
+    ) -> Any:
+        """
+        Obtiene dato de caché o lo carga si expiró.
+        
+        Args:
+            key: Identificador único del caché
+            loader: Función que carga los datos
+            ttl: Tiempo de vida en segundos
+            
+        Returns:
+            Datos cacheados o recién cargados
+        """
+        if key in self._cache and self._cache[key].is_valid:
+            return self._cache[key].data
+        
+        data = loader()
+        self._cache[key] = CacheEntry(
+            data=data,
+            timestamp=datetime.now(timezone.utc),
+            ttl_seconds=ttl
+        )
+        return data
 ```
 
-### SQLite Thread Safety
+### SQLite con Thread Safety
 
 ```python
-# ✅ CORRECTO: Usar lock para operaciones SQLite
-self._db = sqlite3.connect(str(db_path), check_same_thread=False)
-self._db_lock = threading.Lock()
+import sqlite3
 
-def search(self, query: str) -> List[Dict]:
-    with self._db_lock:  # SIEMPRE usar el lock
-        cursor = self._db.execute("SELECT * FROM search_index WHERE ...")
-        return [dict(row) for row in cursor]
+def _init_database(self) -> None:
+    """Inicializa SQLite con FTS5 para búsqueda."""
+    self._db = sqlite3.connect(
+        "/tmp/operations_search.db",
+        check_same_thread=False  # Requiere uso de _db_lock
+    )
+    
+    with self._db_lock:
+        self._db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS search_index 
+            USING fts5(id, type, content, metadata, timestamp)
+        """)
+        self._db.commit()
 
-# ❌ INCORRECTO: Acceso sin lock
-cursor = self._db.execute(...)  # Race condition posible
+def search(self, query: str, limit: int = 50) -> List[Dict]:
+    """
+    Búsqueda FTS5 - O(log n) vs O(n*m) de búsqueda lineal.
+    
+    IMPORTANTE: Siempre usar _db_lock para operaciones de DB.
+    """
+    if not query or len(query) < 2:
+        return []
+    
+    with self._db_lock:  # CRÍTICO: Lock obligatorio
+        cursor = self._db.execute("""
+            SELECT id, type, content, bm25(search_index) as rank
+            FROM search_index
+            WHERE search_index MATCH ?
+            ORDER BY rank
+            LIMIT ?
+        """, (query, limit))
+        
+        return [
+            {"id": row[0], "type": row[1], "content": row[2], "score": abs(row[3])}
+            for row in cursor
+        ]
 ```
 
 ---
 
 ## ✅ CHECKLIST PRE-COMMIT
 
-Antes de cada commit, verificar:
-
 ### Backend
+- [ ] Todos los endpoints tienen request/response models (Pydantic)
 - [ ] No hay `regex=` en Query parameters (usar `pattern=`)
 - [ ] No hay funciones con `self` fuera de clases
 - [ ] No hay `except:` sin tipo de excepción
-- [ ] Todas las fechas usan `timezone.utc` cuando corresponde
+- [ ] Todas las fechas usan `timezone.utc`
 - [ ] Los errores se loggean antes de silenciarse
 - [ ] CORS restringido para producción
+- [ ] No hay secrets hardcodeados
+- [ ] Input validado y sanitizado
 
 ### Frontend
-- [ ] `API_BASE` usa `window.location.origin` o URL relativa
-- [ ] Todos los `catch` tienen variable de error (`catch (e)`)
-- [ ] Errores de red se distinguen de errores de servidor
-- [ ] CSS usa variables (no valores hardcodeados)
+- [ ] `API_BASE` usa URL relativa o `window.location.origin`
+- [ ] Todos los `catch` tienen variable de error
+- [ ] Los 4 estados de UI están implementados (loading/empty/success/error)
+- [ ] HTML es semántico (button, a, label, etc.)
+- [ ] Inputs tienen labels asociados
+- [ ] Focus states visibles
+- [ ] CSS usa variables del sistema de diseño
 - [ ] Responsive funciona en móvil
 
 ### General
-- [ ] No hay credenciales hardcodeadas
-- [ ] No hay console.log en producción (usar condicional)
+- [ ] No hay `console.log` en producción
+- [ ] No hay TODOs críticos sin resolver
+- [ ] No hay datos mock presentados como producción
 - [ ] Variables de entorno documentadas
 
 ---
 
-## 🔧 VARIABLES DE ENTORNO
+## 🚨 ANTI-PATRONES (PROHIBIDOS)
 
-### Backend (`backend/.env` o sistema)
-```bash
-# Requeridas
-ENV=development|production
-
-# Opcionales
-ALLOWED_ORIGINS=http://localhost:8000,https://midominio.com
-LOG_LEVEL=info|warning|error
-```
-
-### Uso en código
-```python
-# ✅ CORRECTO: Con valor por defecto seguro
-env = os.environ.get("ENV", "development")
-is_prod = env == "production"
-
-# ❌ INCORRECTO: Sin default puede causar None
-env = os.environ.get("ENV")  # Puede ser None
-if env == "production":  # Falla silenciosamente si None
-```
+| Anti-Patrón | Por qué es malo | Alternativa |
+|-------------|-----------------|-------------|
+| URLs hardcodeadas | Falla en producción | `window.location.origin` |
+| `except:` sin tipo | Captura Ctrl+C | `except SpecificError` |
+| `datetime.now()` sin tz | Comparaciones incorrectas | `datetime.now(timezone.utc)` |
+| `self` fuera de clase | TypeError en runtime | Función sin `self` |
+| CORS `["*"]` en prod | Vulnerabilidad XSS | Lista de dominios |
+| Secrets en código | Exposición de credenciales | Variables de entorno |
+| `any` en TypeScript | Pierde type safety | Tipos específicos |
+| Div como botón | Inaccesible | `<button>` real |
+| CSS valores repetidos | Inconsistencia | CSS variables |
+| Errores silenciados | Imposible debuggear | Logging antes de ignorar |
+| Mock como producción | Engaña al usuario | Marcar claramente |
+| API sin response model | Payload impredecible | Pydantic models |
 
 ---
 
@@ -491,7 +891,9 @@ if env == "production":  # Falla silenciosamente si None
 | Funciones/métodos | snake_case | `get_overview()` |
 | Constantes | UPPER_SNAKE | `MAX_EVENTS = 1000` |
 | Variables privadas | _prefijo | `_cache`, `_db_lock` |
+| Pydantic models | PascalCase | `EventResponse` |
 | Endpoints API | kebab-case | `/api/health-check` |
+| Query params | snake_case | `?page_size=10` |
 | CSS classes | kebab-case | `.metric-card` |
 | CSS variables | --kebab-case | `--color-accent` |
 | JS variables | camelCase | `dataCache` |
@@ -499,17 +901,57 @@ if env == "production":  # Falla silenciosamente si None
 
 ---
 
-## 🚨 ANTI-PATRONES A EVITAR
+## 🔧 VARIABLES DE ENTORNO
 
-1. **URLs hardcodeadas** → Usar variables de entorno o detección dinámica
-2. **Bare except** → Siempre especificar tipo de excepción
-3. **datetime.now() sin timezone** → Usar timezone.utc
-4. **self en funciones sueltas** → Solo en métodos de clase
-5. **Errores silenciados** → Siempre loggear antes de ignorar
-6. **CORS ["*"] en producción** → Restringir a dominios específicos
-7. **Secrets en código** → Usar variables de entorno
-8. **CSS valores repetidos** → Usar CSS variables
-9. **catch sin variable** → Siempre `catch (e)` para debugging
+### Requeridas
+```bash
+ENV=development|production
+```
+
+### Opcionales
+```bash
+ALLOWED_ORIGINS=http://localhost:8000,https://midominio.com
+LOG_LEVEL=debug|info|warning|error
+DATABASE_PATH=/tmp/operations.db
+```
+
+### Uso en Código
+```python
+# ✅ CORRECTO: Settings centralizados con Pydantic
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    env: str = "development"
+    log_level: str = "info"
+    allowed_origins: str = "http://localhost:8000"
+    
+    @property
+    def is_production(self) -> bool:
+        return self.env == "production"
+    
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+# ❌ INCORRECTO: os.environ directo sin defaults
+env = os.environ.get("ENV")  # Puede ser None
+```
+
+---
+
+## 🎯 ESTÁNDAR DE CALIDAD
+
+El código final debe parecer trabajo de:
+- Un **senior frontend engineer**
+- Un **senior backend engineer**
+- Un **pragmatic product engineer**
+
+### La Regla de Oro
+
+> **Elige ingeniería sólida sobre espectáculo visual.**
+> 
+> Código aburrido que funciona > Código innovador que nadie entiende.
 
 ---
 
@@ -518,9 +960,11 @@ if env == "production":  # Falla silenciosamente si None
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Pydantic V2 Migration](https://docs.pydantic.dev/latest/migration/)
 - [Python datetime best practices](https://docs.python.org/3/library/datetime.html)
-- [SQLite threading](https://docs.python.org/3/library/sqlite3.html#sqlite3.connect)
+- [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/)
+- [SQLite threading](https://docs.python.org/3/library/sqlite3.html)
 
 ---
 
-**Última actualización:** 2025-03-11
-**Versión del documento:** 1.0.0
+**Versión:** 2.0.0  
+**Última actualización:** 2025-03-11  
+**Basado en:** Fullstack Product Engineer Skill

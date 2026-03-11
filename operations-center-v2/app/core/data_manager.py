@@ -6,12 +6,62 @@ Implementa la arquitectura recomendada por emergent.sh:
 - FileWatcher para invalidación automática cuando archivos cambian
 - SQLite FTS5 para búsqueda rápida (O(log n) vs O(n*m))
 - Cache con TTL y refresh automático
+
+=======================================================================
+🔴 AUDITORÍA DE CÓDIGO - ERRORES Y CORRECCIONES
+=======================================================================
+
+🔴 ERROR CRÍTICO #1 (Línea 459):
+   - PROBLEMA: datetime.now() sin timezone crea datetime naive
+   - IMPACTO: Comparaciones de fechas incorrectas con fechas aware (ISO)
+   - CORRECCIÓN: Usar datetime.now(timezone.utc) o datetime.now().astimezone()
+   ANTES:  return (datetime.now() - oldest_time).days
+   DESPUÉS: from datetime import timezone
+            return (datetime.now(timezone.utc) - oldest_time).days
+
+🔴 ERROR CRÍTICO #2 (Línea 477):
+   - PROBLEMA: Misma issue - datetime.now() sin timezone
+   - IMPACTO: La función _is_recent() puede dar resultados incorrectos
+   - CORRECCIÓN: Consistencia con timezone aware datetimes
+
+🟡 ERROR MODERADO #3 (Línea 467):
+   - PROBLEMA: 'except:' bare exception handler sin especificar tipo
+   - IMPACTO: Captura KeyboardInterrupt, SystemExit, etc.
+   - CORRECCIÓN: Especificar Exception o excepciones específicas
+   ANTES:  except:
+   DESPUÉS: except (ValueError, TypeError, AttributeError):
+
+🟡 ERROR MODERADO #4 (Línea 479):
+   - PROBLEMA: Mismo issue con bare except
+   - CORRECCIÓN: Especificar excepciones
+
+🟡 ERROR MODERADO #5 (Línea 94):
+   - PROBLEMA: check_same_thread=False sin considerar thread safety
+   - IMPACTO: Posibles race conditions en operaciones concurrentes
+   - CORRECCIÓN: Ya usa _db_lock, pero documentar claramente
+
+🟢 MEJORA SUGERIDA #6 (Línea 38-39):
+   - PROBLEMA: CacheEntry.is_valid usa datetime.now() repetidamente
+   - IMPACTO: Pequeña inconsistencia de tiempo en evaluaciones
+   - CORRECCIÓN: Considerar usar monotonic time para TTL
+
+🟢 MEJORA SUGERIDA #7 (Línea 311):
+   - PROBLEMA: Indexa solo 1000 eventos sin advertencia
+   - IMPACTO: Pérdida silenciosa de datos en búsqueda
+   - CORRECCIÓN: Agregar logging/warning cuando se trunca
+
+🟢 MEJORA SUGERIDA #8 (Líneas 203-212):
+   - PROBLEMA: No hay validación del formato JSON de los eventos
+   - IMPACTO: Un evento malformado puede causar problemas
+   - CORRECCIÓN: Agregar try/except por línea, no por archivo
+
+=======================================================================
 """
 
 import json
 import sqlite3
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone  # 🔴 CORREGIDO: Agregado timezone
 from typing import Dict, List, Any, Optional, Callable
 import threading
 from dataclasses import dataclass, field
@@ -36,7 +86,9 @@ class CacheEntry:
     @property
     def is_valid(self) -> bool:
         """Check if cache entry is still valid"""
-        return (datetime.now() - self.timestamp).total_seconds() < self.ttl_seconds
+        # 🟢 MEJORA: Usar timezone aware datetime para consistencia
+        now = datetime.now(timezone.utc) if self.timestamp.tzinfo else datetime.now()
+        return (now - self.timestamp).total_seconds() < self.ttl_seconds
 
 class DataManager:
     """Singleton que gestiona todo el estado en memoria con invalidación inteligente"""
@@ -91,6 +143,7 @@ class DataManager:
     def _init_search_db(self):
         """Initialize SQLite with FTS5 for fast search"""
         self._db_path = Path("/tmp/operations_search_v2.db")
+        # 🟡 NOTA: check_same_thread=False requiere uso cuidadoso con _db_lock
         self._db = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._db_lock = threading.Lock()
         
@@ -201,10 +254,14 @@ class DataManager:
             for event_file in self.events_dir.glob("*.jsonl"):
                 try:
                     with open(event_file, 'r', encoding='utf-8') as f:
-                        for line in f:
+                        for line_num, line in enumerate(f, 1):
                             if line.strip():
-                                events.append(json.loads(line))
-                except (json.JSONDecodeError, IOError) as e:
+                                # 🟢 MEJORADO: try/except por línea individual
+                                try:
+                                    events.append(json.loads(line))
+                                except json.JSONDecodeError as e:
+                                    print(f"Warning: Invalid JSON at {event_file}:{line_num}: {e}")
+                except IOError as e:
                     print(f"Error loading {event_file}: {e}")
         
         # Sort by timestamp descending
@@ -306,6 +363,12 @@ class DataManager:
             # Clear previous index
             self._db.execute("DELETE FROM search_index")
             self._db.execute("DELETE FROM search_meta")
+            
+            # 🟢 MEJORADO: Agregar warning cuando se trunca
+            total_events = len(self._events)
+            indexed_events = min(total_events, 1000)
+            if total_events > 1000:
+                print(f"⚠️  Warning: Only indexing {indexed_events}/{total_events} events for search")
             
             # Index events
             for i, event in enumerate(self._events[:1000]):  # Limit to 1000 events
@@ -455,8 +518,21 @@ class DataManager:
         try:
             # Find the oldest event
             oldest_event = min(self._events, key=lambda x: x.get('timestamp', ''))
-            oldest_time = datetime.fromisoformat(oldest_event.get('timestamp').replace('Z', '+00:00'))
-            uptime_days = (datetime.now() - oldest_time).days
+            oldest_timestamp = oldest_event.get('timestamp', '')
+            
+            if not oldest_timestamp:
+                return "unknown"
+            
+            # 🔴 CORREGIDO: Manejo adecuado de timezone
+            oldest_time = datetime.fromisoformat(oldest_timestamp.replace('Z', '+00:00'))
+            
+            # Asegurar que comparamos con datetime aware
+            if oldest_time.tzinfo is not None:
+                now = datetime.now(timezone.utc)
+            else:
+                now = datetime.now()
+            
+            uptime_days = (now - oldest_time).days
             
             if uptime_days == 0:
                 return "<1 day"
@@ -464,7 +540,9 @@ class DataManager:
                 return "1 day"
             else:
                 return f"{uptime_days} days"
-        except:
+        # 🟡 CORREGIDO: Especificar excepciones en lugar de bare except
+        except (ValueError, TypeError, AttributeError) as e:
+            print(f"Warning: Error calculating uptime: {e}")
             return "unknown"
     
     def _is_recent(self, date_str: str) -> bool:
@@ -474,8 +552,16 @@ class DataManager:
         
         try:
             event_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            return (datetime.now() - event_date).days < 1
-        except:
+            
+            # 🔴 CORREGIDO: Usar timezone aware datetime para comparación
+            if event_date.tzinfo is not None:
+                now = datetime.now(timezone.utc)
+            else:
+                now = datetime.now()
+            
+            return (now - event_date).days < 1
+        # 🟡 CORREGIDO: Especificar excepciones
+        except (ValueError, TypeError, AttributeError):
             return False
     
     def _broadcast_update_async(self, changed_path: str):

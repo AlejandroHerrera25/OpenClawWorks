@@ -4,6 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw Operations Center v2</title>
+    <!--
+    =======================================================================
+    🔴 AUDITORÍA DE CÓDIGO - ERRORES Y CORRECCIONES (UI/Frontend)
+    =======================================================================
+
+    🔴 ERROR CRÍTICO #1 (Línea 703):
+       - PROBLEMA: API_BASE hardcodeado a 'http://localhost:8000/api'
+       - IMPACTO: NO funciona en producción ni en otros hosts
+       - CORRECCIÓN: Usar URL relativa o detectar dinámicamente
+       ANTES:  const API_BASE = 'http://localhost:8000/api';
+       DESPUÉS: const API_BASE = window.location.origin + '/api';
+               // O simplemente: const API_BASE = '/api';
+
+    🟡 ERROR MODERADO #2 (Línea 745 - catch sin parámetro):
+       - PROBLEMA: catch {} sin variable de error impide debugging
+       - IMPACTO: Errores silenciados, difícil troubleshooting
+       - CORRECCIÓN: Agregar variable de error
+       ANTES:  } catch {
+       DESPUÉS: } catch (e) {
+                  console.warn('Date parsing error:', e);
+
+    🟡 ERROR MODERADO #3 (Línea 775):
+       - PROBLEMA: No hay manejo de errores de red específico
+       - IMPACTO: Usuario no sabe si es error de red o del servidor
+       - CORRECCIÓN: Distinguir tipos de error
+
+    🟢 MEJORA SUGERIDA #4:
+       - PROBLEMA: No hay indicador de carga durante refresh
+       - CORRECCIÓN: Agregar spinner o estado de loading
+
+    🟢 MEJORA SUGERIDA #5:
+       - PROBLEMA: El auto-refresh cada 30s puede ser excesivo
+       - CORRECCIÓN: Usar WebSocket para updates en tiempo real
+
+    🟢 MEJORA SUGERIDA #6:
+       - PROBLEMA: No hay manejo de estado offline
+       - CORRECCIÓN: Agregar detección de conexión y UI apropiada
+
+    =======================================================================
+    -->
     <style>
         /* ========== CSS Variables ========== */
         :root {
@@ -699,8 +739,10 @@
     </footer>
 
     <script>
-        // Configuration
-        const API_BASE = 'http://localhost:8000/api';
+        // 🔴 CORREGIDO: Usar URL relativa en lugar de hardcoded localhost
+        // ANTES: const API_BASE = 'http://localhost:8000/api';
+        // DESPUÉS:
+        const API_BASE = window.location.origin + '/api';
         
         // State
         let dataCache = {
@@ -742,7 +784,9 @@
                 if (diffMins < 60) return `${diffMins}m ago`;
                 if (diffHours < 24) return `${diffHours}h ago`;
                 return `${diffDays}d ago`;
-            } catch {
+            // 🟡 CORREGIDO: catch con variable de error para debugging
+            } catch (e) {
+                console.warn('Date parsing error:', e);
                 return '--';
             }
         }
@@ -765,17 +809,32 @@
             return `<span class="event-severity ${colors[severity] || 'severity-s4'}">${labels[severity] || severity}</span>`;
         }
         
-        // API Functions
+        // 🟡 MEJORADO: API Functions con mejor manejo de errores
         async function fetchData(endpoint) {
             try {
                 const response = await fetch(`${API_BASE}${endpoint}`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                if (!response.ok) {
+                    // Distinguir tipos de error HTTP
+                    if (response.status >= 500) {
+                        throw new Error(`Server error: ${response.status}`);
+                    } else if (response.status === 404) {
+                        throw new Error(`Endpoint not found: ${endpoint}`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                }
                 
                 const data = await response.json();
                 if (!data.success) throw new Error(data.message || 'API error');
                 
                 return data.data;
             } catch (error) {
+                // 🟡 MEJORADO: Distinguir errores de red vs errores del servidor
+                if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                    console.error(`Network error fetching ${endpoint}: Server may be offline`);
+                    throw new Error('Network error: Server unreachable');
+                }
                 console.error(`Error fetching ${endpoint}:`, error);
                 throw error;
             }
@@ -981,6 +1040,7 @@
         // Initialize
         async function init() {
             console.log('Initializing Operations Center v2...');
+            console.log('API Base URL:', API_BASE); // 🟢 AGREGADO: Log para debugging
             
             // Set initial state
             updateSystemStatus('loading');

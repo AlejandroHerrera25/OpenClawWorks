@@ -2,6 +2,68 @@
 """
 FastAPI Gateway para OpenClaw Operations Center v2
 Arquitectura recomendada por emergent.sh
+
+=======================================================================
+🔴 AUDITORÍA DE CÓDIGO - ERRORES CRÍTICOS Y CORRECCIONES
+=======================================================================
+
+🔴 ERROR CRÍTICO #1 (Línea 159):
+   - PROBLEMA: El parámetro 'regex' está DEPRECADO en FastAPI/Pydantic v2
+   - IMPACTO: Advertencias de deprecación o errores en versiones recientes
+   - CORRECCIÓN: Cambiar 'regex' por 'pattern'
+   ANTES:  severity: Optional[str] = Query(None, regex="^(S1|S2|S3|S4)$")
+   DESPUÉS: severity: Optional[str] = Query(None, pattern="^(S1|S2|S3|S4)$")
+
+🔴 ERROR CRÍTICO #2 (Líneas 212-224):
+   - PROBLEMA: La función '_group_results_by_type' usa 'self' pero NO es un método de clase
+   - IMPACTO: TypeError: _group_results_by_type() takes 1 positional argument but 2 were given
+   - El código actual NO FUNCIONA - el endpoint /api/search fallará
+   - CORRECCIÓN: Eliminar 'self' del parámetro y de la llamada
+   ANTES:  
+      def _group_results_by_type(self, results: List[Dict]) -> Dict:
+      ...
+      "types": self._group_results_by_type(results)
+   DESPUÉS:
+      def _group_results_by_type(results: List[Dict]) -> Dict:
+      ...
+      "types": _group_results_by_type(results)
+
+🟡 ERROR MODERADO #3 (Línea 40):
+   - PROBLEMA: Captura genérica de excepciones sin logging
+   - IMPACTO: Errores silenciados, difícil debugging
+   - CORRECCIÓN: Agregar logging y especificar excepciones
+   ANTES:  except:
+   DESPUÉS: except Exception as e:
+              print(f"Error sending to WebSocket: {e}")
+
+🟡 ERROR MODERADO #4 (Línea 76):
+   - PROBLEMA: CORS con allow_origins=["*"] es inseguro
+   - IMPACTO: Vulnerabilidad de seguridad en producción
+   - CORRECCIÓN: En producción, especificar dominios permitidos
+   RECOMENDACIÓN: 
+      allow_origins=[os.environ.get("ALLOWED_ORIGINS", "http://localhost:8000").split(",")]
+
+🟡 ERROR MODERADO #5 (Línea 83-85):
+   - PROBLEMA: Se monta directorio static sin verificar permisos/seguridad
+   - IMPACTO: Posible exposición de archivos no deseados
+   - CORRECCIÓN: Agregar validación de path y restricciones
+
+🟢 MEJORA SUGERIDA #6 (Línea 93):
+   - PROBLEMA: El exception handler global expone detalles internos
+   - IMPACTO: Information disclosure en producción
+   - CORRECCIÓN: En producción, no exponer str(exc) al cliente
+   RECOMENDACIÓN:
+      if os.environ.get("ENV") == "production":
+          message = "Internal server error"
+      else:
+          message = str(exc)
+
+🟢 MEJORA SUGERIDA #7 (Líneas 335-341):
+   - PROBLEMA: El bloque if __name__ == "__main__" tiene código duplicado
+   - IMPACTO: Si se ejecuta directamente, usa reload=True que no es óptimo
+   - CORRECCIÓN: Configurar reload basado en environment
+
+=======================================================================
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
@@ -37,7 +99,9 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
+            # 🔴 CORREGIDO: Captura genérica de excepciones con logging
+            except Exception as e:
+                print(f"Error sending to WebSocket: {e}")
                 disconnected.append(connection)
         
         for conn in disconnected:
@@ -71,6 +135,7 @@ app = FastAPI(
 )
 
 # CORS configuration
+# 🟡 NOTA: En producción, cambiar allow_origins a dominios específicos
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, restrict this
@@ -91,12 +156,15 @@ async def global_exception_handler(request, exc):
     """Global exception handler with fallback data"""
     print(f"⚠️  API Error: {exc}")
     
+    # 🟢 MEJORA: No exponer detalles internos en producción
+    error_message = str(exc) if os.environ.get("ENV") != "production" else "Internal server error"
+    
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "error": "internal_error",
-            "message": str(exc),
+            "message": error_message,
             "fallback_data": get_fallback_data(request.url.path)
         }
     )
@@ -156,7 +224,8 @@ async def get_overview():
 async def get_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    severity: Optional[str] = Query(None, regex="^(S1|S2|S3|S4)$")
+    # 🔴 CORREGIDO: Cambiar 'regex' (deprecado) por 'pattern'
+    severity: Optional[str] = Query(None, pattern="^(S1|S2|S3|S4)$")
 ):
     """Eventos paginados con filtro opcional por severidad"""
     events_data = data_manager.get_events(limit=limit, offset=offset)
@@ -196,6 +265,18 @@ async def get_incidents():
         "data": data_manager.get_incidents()
     }
 
+# 🔴 CORREGIDO: Función movida ANTES del endpoint que la usa
+# y eliminado 'self' ya que NO es un método de clase
+def _group_results_by_type(results: List[Dict]) -> Dict:
+    """Agrupa resultados por tipo"""
+    types = {}
+    for result in results:
+        result_type = result.get("type", "unknown")
+        if result_type not in types:
+            types[result_type] = 0
+        types[result_type] += 1
+    return types
+
 @app.get("/api/search")
 async def search(
     q: str = Query(..., min_length=2, max_length=100),
@@ -209,19 +290,10 @@ async def search(
             "query": q,
             "results": results,
             "total": len(results),
-            "types": self._group_results_by_type(results)
+            # 🔴 CORREGIDO: Llamar a la función sin 'self'
+            "types": _group_results_by_type(results)
         }
     }
-
-def _group_results_by_type(self, results: List[Dict]) -> Dict:
-    """Agrupa resultados por tipo"""
-    types = {}
-    for result in results:
-        result_type = result.get("type", "unknown")
-        if result_type not in types:
-            types[result_type] = 0
-        types[result_type] += 1
-    return types
 
 # ========== WEBSOCKET ENDPOINT ==========
 
@@ -332,10 +404,13 @@ if __name__ == "__main__":
       • Concurrent users: 50+
     """)
     
+    # 🟢 MEJORA: Configurar reload basado en environment
+    is_dev = os.environ.get("ENV", "development") == "development"
+    
     uvicorn.run(
         "app.api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=is_dev,
         log_level="info"
     )

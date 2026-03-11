@@ -940,6 +940,247 @@ env = os.environ.get("ENV")  # Puede ser None
 
 ---
 
+## ⚠️ GESTIÓN DE SERVIDORES Y PUERTOS (CRÍTICO)
+
+### El Problema Común
+Los agentes frecuentemente caen en loops infinitos intentando:
+- Matar procesos que no mueren
+- Iniciar servidores en puertos ocupados
+- Modificar código para cambiar puertos cuando el problema es un proceso zombie
+
+### Regla #1: NUNCA Hardcodear Puertos
+
+```python
+# ❌ INCORRECTO: Puerto hardcodeado
+PORT = 8000  # Si está ocupado, el agente entra en loop
+
+def run_server():
+    # No hay forma de cambiar el puerto sin modificar código
+    with socketserver.TCPServer(("", 8000), Handler) as httpd:
+        httpd.serve_forever()
+
+# ✅ CORRECTO: Puerto configurable via variable de entorno
+import os
+
+PORT = int(os.environ.get("PORT", 8000))
+
+def run_server(port: int = None):
+    """
+    Inicia el servidor en el puerto especificado.
+    
+    Args:
+        port: Puerto a usar. Si es None, usa PORT del entorno.
+    """
+    server_port = port or PORT
+    
+    with socketserver.TCPServer(("", server_port), Handler) as httpd:
+        print(f"Server running on port {server_port}")
+        httpd.serve_forever()
+
+# Llamada con puerto personalizado:
+run_server(port=8001)  # Fácil cambiar sin modificar código
+```
+
+### Regla #2: Script de Inicio con Cleanup Automático
+
+```bash
+#!/bin/bash
+# start.sh - SIEMPRE incluir cleanup antes de iniciar
+
+set -e
+
+PORT=${PORT:-8000}
+
+echo "🧹 Limpiando procesos anteriores en puerto $PORT..."
+
+# Método 1: Matar por puerto (más confiable)
+fuser -k ${PORT}/tcp 2>/dev/null || true
+
+# Método 2: Matar por nombre de proceso (backup)
+pkill -f "python.*server" 2>/dev/null || true
+pkill -f "uvicorn" 2>/dev/null || true
+
+# Esperar a que el puerto se libere
+sleep 2
+
+# Verificar que el puerto está libre
+if lsof -i :${PORT} > /dev/null 2>&1; then
+    echo "❌ ERROR: Puerto $PORT sigue ocupado"
+    lsof -i :${PORT}
+    exit 1
+fi
+
+echo "✅ Puerto $PORT libre, iniciando servidor..."
+
+# Iniciar servidor
+python -m uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+```
+
+### Regla #3: Verificar Puerto ANTES de Intentar Usarlo
+
+```python
+import socket
+
+def is_port_available(port: int) -> bool:
+    """Verifica si un puerto está disponible."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("", port))
+            return True
+        except OSError:
+            return False
+
+def find_available_port(start_port: int = 8000, max_attempts: int = 10) -> int:
+    """Encuentra el primer puerto disponible."""
+    for port in range(start_port, start_port + max_attempts):
+        if is_port_available(port):
+            return port
+    raise RuntimeError(f"No available ports found in range {start_port}-{start_port + max_attempts}")
+
+# Uso en servidor
+def run_server():
+    port = int(os.environ.get("PORT", 8000))
+    
+    if not is_port_available(port):
+        print(f"⚠️ Puerto {port} ocupado, buscando alternativa...")
+        port = find_available_port(port + 1)
+        print(f"✅ Usando puerto alternativo: {port}")
+    
+    # Iniciar servidor en puerto disponible
+    uvicorn.run(app, host="0.0.0.0", port=port)
+```
+
+### Regla #4: Funciones Deben Aceptar Parámetros de Configuración
+
+```python
+# ❌ INCORRECTO: Función sin parámetros - imposible reconfigurar
+def run_server():
+    PORT = 8000  # Hardcodeado dentro de la función
+    httpd = HTTPServer(("", PORT), Handler)
+    httpd.serve_forever()
+
+# ✅ CORRECTO: Función con parámetros y defaults sensatos
+def run_server(
+    host: str = "0.0.0.0",
+    port: int = None,
+    reload: bool = None
+) -> None:
+    """
+    Inicia el servidor HTTP.
+    
+    Args:
+        host: Host a bindear (default: 0.0.0.0)
+        port: Puerto (default: variable PORT o 8000)
+        reload: Hot reload (default: True en dev, False en prod)
+    """
+    server_port = port or int(os.environ.get("PORT", 8000))
+    is_dev = os.environ.get("ENV", "development") == "development"
+    should_reload = reload if reload is not None else is_dev
+    
+    print(f"🚀 Starting server on {host}:{server_port}")
+    
+    uvicorn.run(
+        "app.api.main:app",
+        host=host,
+        port=server_port,
+        reload=should_reload
+    )
+
+# Ahora el agente puede hacer:
+run_server(port=8001)  # Sin modificar código interno
+```
+
+### Regla #5: Manejo de Señales para Cleanup Graceful
+
+```python
+import signal
+import sys
+
+def cleanup_handler(signum, frame):
+    """Handler para limpieza al recibir señal de terminación."""
+    print("\n🛑 Señal recibida, limpiando...")
+    
+    # Cerrar conexiones de DB
+    if hasattr(data_manager, '_db'):
+        data_manager._db.close()
+    
+    # Detener observers
+    if hasattr(data_manager, '_observer'):
+        data_manager._observer.stop()
+    
+    print("✅ Cleanup completado")
+    sys.exit(0)
+
+# Registrar handlers al inicio
+signal.signal(signal.SIGINT, cleanup_handler)   # Ctrl+C
+signal.signal(signal.SIGTERM, cleanup_handler)  # kill
+```
+
+### Regla #6: NUNCA Entrar en Loop de Debugging de Puertos
+
+Si el agente detecta "Address already in use":
+
+```
+✅ HACER:
+1. Ejecutar: fuser -k {PORT}/tcp
+2. Esperar 2 segundos
+3. Verificar con: lsof -i :{PORT}
+4. Si sigue ocupado, usar puerto alternativo
+
+❌ NO HACER:
+1. Intentar matar el mismo proceso 5 veces
+2. Modificar el código para cambiar el puerto
+3. Buscar PIDs manualmente con ps aux | grep
+4. Reiniciar todo el sistema
+```
+
+### Comandos de Diagnóstico Rápido
+
+```bash
+# Ver qué proceso usa un puerto
+lsof -i :8000
+
+# Matar proceso por puerto (más confiable)
+fuser -k 8000/tcp
+
+# Ver todos los puertos en uso
+netstat -tlnp | grep LISTEN
+
+# Matar todos los procesos Python de servidor
+pkill -9 -f "uvicorn|python.*server"
+
+# Verificar si puerto está libre
+nc -z localhost 8000 && echo "Ocupado" || echo "Libre"
+```
+
+### Variables de Entorno para Servidores
+
+```bash
+# .env
+PORT=8000
+HOST=0.0.0.0
+WORKERS=4
+RELOAD=true  # Solo en desarrollo
+```
+
+```python
+# config.py
+from pydantic import BaseSettings
+
+class ServerSettings(BaseSettings):
+    port: int = 8000
+    host: str = "0.0.0.0"
+    workers: int = 4
+    reload: bool = False
+    
+    class Config:
+        env_file = ".env"
+
+server_settings = ServerSettings()
+```
+
+---
+
 ## 🎯 ESTÁNDAR DE CALIDAD
 
 El código final debe parecer trabajo de:

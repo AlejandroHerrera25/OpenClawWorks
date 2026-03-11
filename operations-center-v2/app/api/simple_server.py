@@ -24,7 +24,8 @@ sys.path.insert(0, grandparent_dir)
 
 from app.core.data_manager import data_manager
 
-PORT = 8000
+# ✅ CORREGIDO: Puerto configurable via variable de entorno
+PORT = int(os.environ.get("PORT", 8000))
 BASE_DIR = Path(__file__).parent.parent.parent
 
 class OperationsCenterHandler(http.server.BaseHTTPRequestHandler):

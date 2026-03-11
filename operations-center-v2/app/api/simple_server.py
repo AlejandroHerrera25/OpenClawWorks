@@ -221,20 +221,62 @@ class OperationsCenterHandler(http.server.BaseHTTPRequestHandler):
         if '404' in format % args or '500' in format % args:
             print(format % args)
 
-def run_server():
-    """Run the HTTP server"""
-    with socketserver.TCPServer(("", PORT), OperationsCenterHandler) as httpd:
+import socket
+import signal
+
+def is_port_available(port: int) -> bool:
+    """Verifica si un puerto está disponible."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("", port))
+            return True
+        except OSError:
+            return False
+
+def find_available_port(start_port: int = 8000, max_attempts: int = 10) -> int:
+    """Encuentra el primer puerto disponible."""
+    for port in range(start_port, start_port + max_attempts):
+        if is_port_available(port):
+            return port
+    raise RuntimeError(f"No ports available in range {start_port}-{start_port + max_attempts}")
+
+def run_server(port: int = None, host: str = ""):
+    """
+    Run the HTTP server.
+    
+    Args:
+        port: Puerto a usar. Si es None, usa PORT del entorno o busca uno disponible.
+        host: Host a bindear (default: "" = todas las interfaces)
+    """
+    server_port = port or PORT
+    
+    # Verificar si el puerto está disponible
+    if not is_port_available(server_port):
+        print(f"⚠️  Puerto {server_port} ocupado, buscando alternativa...")
+        server_port = find_available_port(server_port + 1)
+        print(f"✅ Usando puerto alternativo: {server_port}")
+    
+    # Handler para cleanup graceful
+    def cleanup_handler(signum, frame):
+        print("\n🛑 Señal recibida, cerrando servidor...")
+        data_manager.shutdown()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, cleanup_handler)
+    signal.signal(signal.SIGTERM, cleanup_handler)
+    
+    with socketserver.TCPServer((host, server_port), OperationsCenterHandler) as httpd:
         print(f"""
 🚀 OPENCLAW OPERATIONS CENTER v2 - SIMPLE SERVER
 ================================================
 
-📊 Server started on port {PORT}
+📊 Server started on port {server_port}
 📁 Base directory: {BASE_DIR}
 
 🔗 Access URLs:
-   • UI Overview:      http://localhost:{PORT}/ui/overview.html
-   • REST API:         http://localhost:{PORT}/api/*
-   • Health check:     http://localhost:{PORT}/api/health
+   • UI Overview:      http://localhost:{server_port}/ui/overview.html
+   • REST API:         http://localhost:{server_port}/api/*
+   • Health check:     http://localhost:{server_port}/api/health
 
 🏗️  Architecture:
    • DataManager singleton with FileWatcher
@@ -260,4 +302,7 @@ def run_server():
             data_manager.shutdown()
 
 if __name__ == "__main__":
-    run_server()
+    # Permite pasar puerto como argumento: python simple_server.py 8001
+    import sys
+    custom_port = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    run_server(port=custom_port)

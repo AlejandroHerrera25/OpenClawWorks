@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Operations Center v2</title>
+    <style>
+        /* ========== CSS Variables ========== */
+        :root {
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --spacing-xl: 2rem;
+            
+            --color-bg: #0a0a0f;
+            --color-surface: #12121a;
+            --color-border: #2a2a3a;
+            --color-text: #e0e0e0;
+            --color-text-muted: #888;
+            --color-accent: #6366f1;
+            --color-success: #22c55e;
+            --color-warning: #f59e0b;
+            --color-error: #ef4444;
+            --color-info: #3b82f6;
+            
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            
+            --transition-fast: 150ms ease;
+            --transition-normal: 250ms ease;
+        }
+        
+        /* ========== Base Styles ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        /* ========== Header ========== */
+        .header {
+            background: var(--color-surface);
+            border-bottom: 1px solid var(--color-border);
+            padding: var(--spacing-md) var(--spacing-lg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--spacing-md);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--color-accent);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        
+        .logo-text h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: var(--spacing-xs);
+        }
+        
+        .version {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+        }
+        
+        /* ========== Navigation ========== */
+        .nav-tabs {
+            display: flex;
+            gap: var(--spacing-sm);
+            flex-wrap: wrap;
+        }
+        
+        .nav-tab {
+            padding: var(--spacing-sm) var(--spacing-md);
+            background: transparent;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            color: var(--color-text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all var(--transition-fast);
+        }
+        
+        .nav-tab:hover {
+            background: var(--color-border);
+            color: var(--color-text);
+        }
+        
+        .nav-tab.active {
+            background: var(--color-accent);
+            border-color: var(--color-accent);
+            color: white;
+        }
+        
+        /* ========== Status Bar ========== */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+            font-size: 0.875rem;
+        }
+        
+        .status-indicator {
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+        }
+        
+        .status-ok {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--color-success);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        .status-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--color-warning);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .status-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--color-error);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .status-loading {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--color-info);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        /* ========== Main Content ========== */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: var(--spacing-lg);
+        }
+        
+        .content-header {
+            margin-bottom: var(--spacing-xl);
+        }
+        
+        .content-header h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: var(--spacing-xs);
+        }
+        
+        .content-header p {
+            color: var(--color-text-muted);
+        }
+        
+        /* ========== Metrics Grid ========== */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-xl);
+        }
+        
+        .metric-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+            transition: border-color var(--transition-normal);
+        }
+        
+        .metric-card:hover {
+            border-color: var(--color-accent);
+        }
+        
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-md);
+        }
+        
+        .metric-title {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-text-muted);
+        }
+        
+        .metric-icon {
+            font-size: 1.25rem;
+        }
+        
+        .health-score {
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: var(--spacing-sm);
+        }
+        
+        .health-score-ok {
+            color: var(--color-success);
+        }
+        
+        .health-score-warning {
+            color: var(--color-warning);
+        }
+        
+        .health-score-error {
+            color: var(--color-error);
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: var(--spacing-sm);
+        }
+        
+        .metric-description {
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+            line-height: 1.4;
+        }
+        
+        /* ========== Data Grid ========== */
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: var(--spacing-lg);
+        }
+        
+        .data-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+        
+        .data-card-header {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--color-border);
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .data-card-header h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+        
+        .data-card-content {
+            padding: var(--spacing-md);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        /* ========== Event List ========== */
+        .event-list {
+            list-style: none;
+        }
+        
+        .event-item {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--color-border);
+        }
+        
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-xs);
+        }
+        
+        .event-title {
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        .event-severity {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+        }
+        
+        .severity-s1 {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--color-error);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .severity-s2 {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--color-warning);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .severity-s3 {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--color-info);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .severity-s4 {
+            background: rgba(107, 114, 128, 0.1);
+            color: var(--color-text-muted);
+            border: 1px solid rgba(107, 114, 128, 0.3);
+        }
+        
+        .event-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+        }
+        
+        /* ========== Session List ========== */
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+        }
+        
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+            padding: var(--spacing-sm);
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: var(--radius-sm);
+        }
+        
+        .session-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .session-status-active {
+            background: var(--color-success);
+            box-shadow: 0 0 8px var(--color-success);
+        }
+        
+        .session-status-inactive {
+            background: var(--color-text-muted);
+        }
+        
+        .session-info {
+            flex: 1;
+        }
+        
+        .session-name {
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        .session-details {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+        }
+        
+        /* ========== Skills Grid ========== */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: var(--spacing-md);
+        }
+        
+        .skill-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            transition: all var(--transition-fast);
+        }
+        
+        .skill-card:hover {
+            border-color: var(--color-accent);
+            transform: translateY(-2px);
+        }
+        
+        .skill-card.certified {
+            border-color: var(--color-success);
+        }
+        
+        .skill-header {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+        
+        .skill-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--color-accent);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+        
+        .skill-name {
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        .skill-description {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            margin-bottom: var(--spacing-sm);
+            line-height: 1.4;
+        }
+        
+        .skill-certification {
+            font-size: 0.7rem;
+            color: var(--color-success);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+        
+        /* ========== Loading Skeletons ========== */
+        .loading-skeleton {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+        }
+        
+        .loading-skeleton .event-item,
+        .loading-skeleton .session-item,
+        .loading-skeleton .skill-card {
+            background: linear-gradient(
+                90deg,
+                var(--color-border) 25%,
+                var(--color-surface) 50%,
+                var(--color-border) 75%
+            );
+            background-size: 200% 100%;
+            animation: skeleton-shimmer 1.5s infinite;
+            border: none;
+        }
+        
+        @keyframes skeleton-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* ========== Footer ========== */
+        .footer {
+            margin-top: var(--spacing-xl);
+            padding: var(--spacing-lg);
+            border-top: 1px solid var(--color-border);
+            text-align: center;
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+        }
+        
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: var(--spacing-lg);
+            margin-top: var(--spacing-sm);
+        }
+        
+        .footer-link {
+            color: var(--color-accent);
+            text-decoration: none;
+        }
+        
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* ========== Responsive Design ========== */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .nav-tabs {
+                justify-content: center;
+            }
+            
+            .status-bar {
+                justify-content: center;
+            }
+            
+            .container {
+                padding: var(--spacing-md);
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .skills-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: var(--spacing-sm);
+            }
+            
+            .metric-card {
+                padding: var(--spacing-md);
+            }
+            
+            .metric-value {
+                font-size: 2rem;
+            }
+            
+            .health-score {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">OC</div>
+            <div class="logo-text">
+                <h1>OpenClaw Operations Center</h1>
+                <div class="version">v2.0 • emergent.sh architecture</div>
+            </div>
+        </div>
+        
+        <nav class="nav-tabs">
+            <a href="#overview" class="nav-tab active">Overview</a>
+            <a href="#operations" class="nav-tab">Operations</a>
+            <a href="#skills" class="nav-tab">Skills</a>
+            <a href="#logs" class="nav-tab">Logs</a>
+            <a href="#search" class="nav-tab">Search</a>
+        </nav>
+        
+        <div class="status-bar">
+            <div class="status-indicator status-ok" id="system-status">
+                System: Healthy
+            </div>
+            <div class="text-muted" id="last-update">
+                Last update: --
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+        <div class="content-header">
+            <h2>System Overview</h2>
+            <p>Real-time monitoring and management dashboard</p>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="metrics-grid">
+            <!-- Health Score -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">Health Score</div>
+                    <div class="metric-icon">❤️</div>
+                </div>
+                <div class="health-score health-score-ok" id="health-score">--</div>
+                <div class="metric-description">
+                    Overall system health based on recent events and performance
+                </div>
+            </div>
+
+            <!-- Total Events -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">Total Events</div>
+                    <div class="metric-icon">📊</div>
+                </div>
+                <div class="metric-value" id="total-events">--</div>
+                <div class="metric-description">
+                    System events recorded in .system_events/
+                </div>
+            </div>
+
+            <!-- Active Sessions -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">Active Sessions</div>
+                    <div class="metric-icon">👁️</div>
+                </div>
+                <div class="metric-value" id="active-sessions">--</div>
+                <div class="metric-description">
+                    Currently monitored agent sessions
+                </div>
+            </div>
+
+            <!-- Skills -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">Skills</div>
+                    <div class="metric-icon">🛠️</div>
+                </div>
+                <div class="metric-value" id="total-skills">--</div>
+                <div class="metric-description">
+                    <span id="certified-skills">--</span> certified, <span id="scripts-count">--</span> with scripts
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Grid -->
+        <div class="data-grid">
+            <!-- Recent Events -->
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3>📝 Recent Events</h3>
+                </div>
+                <div class="data-card-content">
+                    <ul class="event-list" id="recent-events">
+                        <li class="event-item loading-skeleton" style="height: 60px;"></li>
+                        <li class="event-item loading-skeleton" style="height: 60px;"></li>
+                        <li class="event-item loading-skeleton" style="height: 60px;"></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Active Sessions -->
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3>👁️ Active Sessions</h3>
+                </div>
+                <div class="data-card-content">
+                    <div class="session-list" id="session-list">
+                        <div class="session-item loading-skeleton" style="height: 50px;"></div>
+                        <div class="session-item loading-skeleton" style="height: 50px;"></div>
+                        <div class="session-item loading-skeleton" style="height: 50px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Skills Overview -->
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3>🛠️ Skills Overview</h3>
+                </div>
+                <div class="data-card-content">
+                    <div class="skills-grid" id="skills-grid">
+                        <div class="skill-card loading-skeleton" style="height: 100px;"></div>
+                        <div class="skill-card loading-skeleton" style="height: 100px;"></div>
+                        <div class="skill-card loading-skeleton" style="height: 100px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div>OpenClaw Operations Center v2 • Built with emergent.sh architecture</div>
+        <div class="footer-links">
+            <a href="#" class="footer-link">Documentation</a>
+            <a href="#" class="footer-link">API Reference</a>
+            <a href="#" class="footer-link">GitHub</a>
+            <a href="#" class="footer-link">Report Issue</a>
+        </div>
+    </footer>
+
+    <script>
+        // Configuration
+        const API_BASE = 'http://localhost:8000/api';
+        
+        // State
+        let dataCache = {
+            overview: null,
+            events: null,
+            watchdog: null,
+            skills: null,
+            lastUpdate: null
+        };
+        
+        // DOM Elements
+        const elements = {
+            systemStatus: document.getElementById('system-status'),
+            lastUpdate: document.getElementById('last-update'),
+            healthScore: document.getElementById('health-score'),
+            totalEvents: document.getElementById('total-events'),
+            activeSessions: document.getElementById('active-sessions'),
+            totalSkills: document.getElementById('total-skills'),
+            certifiedSkills: document.getElementById('certified-skills'),
+            scriptsCount: document.getElementById('scripts-count'),
+            recentEvents: document.getElementById('recent-events'),
+            sessionList: document.getElementById('session-list'),
+            skillsGrid: document.getElementById('skills-grid')
+        };
+        
+        // Formatting helpers
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return '--';
+            
+            try {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                
+                if (diffMins < 1) return 'just now';
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                return `${diffDays}d ago`;
+            } catch {
+                return '--';
+            }
+        }
+        
+        function formatSeverity(severity) {
+            const colors = {
+                'S1': 'severity-s1',
+                'S2': 'severity-s2',
+                'S3': 'severity-s3',
+                'S4': 'severity-s4'
+            };
+            
+            const labels = {
+                'S1': 'Critical',
+                'S2': 'High',
+                'S3': 'Medium',
+                'S4': 'Low'
+            };
+            
+            return `<span class="event-severity ${colors[severity] || 'severity-s4'}">${labels[severity] || severity}</span>`;
+        }
+        
+        // API Functions
+        async function fetchData(endpoint) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                if (!data.success) throw new Error(data.message || 'API error');
+                
+                return data.data;
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                throw error;
+            }
+        }
+        
+        async function loadOverview() {
+            try {
+                const data = await fetchData('/overview');
+                dataCache.overview = data;
+                dataCache.lastUpdate = data.last_update;
+                
+                updateOverviewUI(data);
+                updateSystemStatus('ok');
+                
+                return data;
+            } catch (error) {
+                updateSystemStatus('error');
+                showError('Failed to load overview data');
+                throw error;
+            }
+        }
+        
+        async function loadEvents() {
+            try {
+                const data = await fetchData('/events?limit=5');
+                dataCache.events = data;
+                updateEventsUI(data.events);
+            } catch (error) {
+                console.error('Failed to load events:', error);
+            }
+        }
+        
+        async function loadWatchdog() {
+            try {
+                const data = await fetchData('/watchdog');
+                dataCache.watchdog = data;
+                updateWatchdogUI(data);
+            } catch (error) {
+                console.error('Failed to load watchdog data:', error);
+            }
+        }
+        
+        async function loadSkills() {
+            try {
+                const data = await fetchData('/skills');
+                dataCache.skills = data;
+                updateSkillsUI(data);
+            } catch (error) {
+                console.error('Failed to load skills:', error);
+            }
+        }
+        
+        // UI Update Functions
+        function updateOverviewUI(data) {
+            // Health score
+            const healthScore = data.health_score;
+            elements.healthScore.textContent = `${healthScore}%`;
+            elements.healthScore.className = `health-score ${
+                healthScore >= 80 ? 'health-score-ok' :
+                healthScore >= 50 ? 'health-score-warning' : 'health-score-error'
+            }`;
+            
+            // Metrics
+            elements.totalEvents.textContent = data.total_events.toLocaleString();
+            elements.activeSessions.textContent = data.active_sessions.toLocaleString();
+            elements.totalSkills.textContent = data.total_skills.toLocaleString();
+            elements.certifiedSkills.textContent = data.certified_skills;
+            elements.scriptsCount.textContent = data.scripts_count;
+            
+            // Last update
+            elements.lastUpdate.textContent = `Last update: ${formatTimeAgo(data.last_update)}`;
+        }
+        
+        function updateEventsUI(events) {
+            if (!events || events.length === 0) {
+                elements.recentEvents.innerHTML = '<li class="event-item text-center text-muted">No recent events</li>';
+                return;
+            }
+            
+            const html = events.map(event => `
+                <li class="event-item">
+                    <div class="event-header">
+                        <div class="event-title">${event.type || 'Unknown event'}</div>
+                        ${formatSeverity(event.severity || 'S4')}
+                    </div>
+                    <div class="event-meta">
+                        <span>${formatTimeAgo(event.timestamp)}</span>
+                        <span>${event.source || 'system'}</span>
+                    </div>
+                </li>
+            `).join('');
+            
+            elements.recentEvents.innerHTML = html;
+        }
+        
+        function updateWatchdogUI(data) {
+            const sessions = data.sessions?.sessions || [];
+            const activeSessions = sessions.filter(s => s.status === 'active');
+            
+            if (activeSessions.length === 0) {
+                elements.sessionList.innerHTML = '<div class="text-center text-muted">No active sessions</div>';
+                return;
+            }
+            
+            const html = activeSessions.slice(0, 5).map(session => `
+                <div class="session-item">
+                    <div class="session-status session-status-active"></div>
+                    <div class="session-info">
+                        <div class="session-name">${session.label || session.id || 'Unknown session'}</div>
+                        <div class="session-details">
+                            ${session.agent_id || 'Unknown agent'} • ${formatTimeAgo(session.started_at)}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            elements.sessionList.innerHTML = html;
+        }
+        
+        function updateSkillsUI(data) {
+            const skills = data.skills || [];
+            
+            if (skills.length === 0) {
+                elements.skillsGrid.innerHTML = '<div class="text-center text-muted">No skills found</div>';
+                return;
+            }
+            
+            // Display top skills
+            const topSkills = skills.slice(0, 6);
+            const html = topSkills.map(skill => `
+                <div class="skill-card ${skill.has_certification ? 'certified' : ''}">
+                    <div class="skill-header">
+                        <div class="skill-icon">${skill.name.substring(0, 2).toUpperCase()}</div>
+                        <div class="skill-name">${skill.name}</div>
+                    </div>
+                    <div class="skill-description">
+                        ${skill.description || 'No description available'}
+                    </div>
+                    ${skill.has_certification ? 
+                        '<div class="skill-certification">✅ Certified</div>' : ''}
+                </div>
+            `).join('');
+            
+            elements.skillsGrid.innerHTML = html;
+        }
+        
+        function updateSystemStatus(status) {
+            const statusElement = elements.systemStatus;
+            
+            statusElement.className = `status-indicator status-${status}`;
+            
+            const messages = {
+                ok: 'System: Healthy',
+                warning: 'System: Warning',
+                error: 'System: Error',
+                loading: 'System: Loading...'
+            };
+            
+            statusElement.textContent = messages[status] || 'System: Unknown';
+        }
+        
+        function showError(message) {
+            // Simple error notification
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #ef4444;
+                color: white;
+                padding: 12px 16px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 1000;
+                animation: slideIn 0.3s ease;
+            `;
+            
+            errorDiv.textContent = `Error: ${message}`;
+            document.body.appendChild(errorDiv);
+            
+            setTimeout(() => {
+                errorDiv.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => errorDiv.remove(), 300);
+            }, 5000);
+        }
+        
+        // Data Loading
+        async function refreshAllData() {
+            try {
+                await Promise.all([
+                    loadOverview(),
+                    loadEvents(),
+                    loadWatchdog(),
+                    loadSkills()
+                ]);
+                
+                console.log('All data refreshed');
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            }
+        }
+        
+        // Initialize
+        async function init() {
+            console.log('Initializing Operations Center v2...');
+            
+            // Set initial state
+            updateSystemStatus('loading');
+            
+            // Load initial data
+            try {
+                await refreshAllData();
+            } catch (error) {
+                console.error('Initial data load failed:', error);
+                showError('Failed to load initial data');
+            }
+            
+            // Set up auto-refresh
+            setInterval(refreshAllData, 30000); // Refresh every 30 seconds
+            
+            console.log('Operations Center v2 initialized');
+        }
+        
+        // Add CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .event-item, .session-item, .skill-card {
+                animation: fadeIn 0.3s ease;
+            }
+            
+            .text-center { text-align: center; }
+            .text-muted { color: var(--color-text-muted); }
+        `;
+        document.head.appendChild(style);
+        
+        // Start the application
+        document.addEventListener('DOMContentLoaded', init);
+        
+        // Make refreshAllData available globally for debugging
+        window.refreshAllData = refreshAllData;
+    </script>
+</body>
+</html>
